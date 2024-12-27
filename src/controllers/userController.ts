@@ -8,6 +8,7 @@ import csvParser from "csv-parser";
 import XLSX from "xlsx";
 import { randomUUID } from "crypto";
 import path from "path";
+import { notificationTypes } from "./notificationController";
 
 const prisma = new PrismaClient();
 
@@ -105,6 +106,10 @@ const UserController: UserController = {
 
   createUser: async (req, res) => {
     const { user, organizationFounded, organizationEmployed } = req.body;
+    console.log(user, organizationFounded, organizationEmployed);
+    const notificationToSend = await prisma.notificationSetup.findFirst({
+      where: { usage: notificationTypes.SIGNUP },
+    });
 
     if (!user?.email) {
       return res
@@ -122,7 +127,6 @@ const UserController: UserController = {
           .status(409)
           .json({ error: "User with this email already exists" });
       }
-
       const organizationFoundedCreate = await prisma.organization.create({
         data: organizationFounded,
       });
@@ -190,6 +194,12 @@ const UserController: UserController = {
               id: user?.state ? user?.state : "unspecified",
             },
           },
+          role: {
+            connect: {
+              id: user?.role ? user?.role : "unspecified",
+            },
+          },
+          
           positionInEmployed: user.positionInEmployed,
           password: user.password,
           refreshToken: refreshToken,
@@ -221,7 +231,10 @@ const UserController: UserController = {
 
         const notification = {
           title: "ACCOUNT: Your new account has been created!",
-          message: `<p>Hi ${user?.firstName},<br><p>Welcome aboard! Your account has been created and now you can start engaging with others through chats, and update your  profile from time to time!</p><p>Here's what you can do:</p><ul><li>Participate in conversations,</li><li>Monitor and update your profile,</li></ul><p>Again, you are most welcome, if you have any question, don't hesitate to contact the admin!</p><div><a href='/dashboard/chat'>Join Conversation</a><a href='/dashboard/profile'>View Profile</a></div><p>We hope you keep having a great time.</p><p>Best Regards,<br>The Admin</p>`,
+          message: notificationToSend!.message.replace(
+            /\[name\]/g,
+            createdUser?.firstName
+          ),
           receiverId: createdUser?.id,
           opened: false,
           createdAt: new Date(),
@@ -368,6 +381,10 @@ const UserController: UserController = {
     let organizationEmployedUpdate: any;
     let founded: any;
     let employed: any;
+
+    const notificationToSend = await prisma.notificationSetup.findFirst({
+      where: { usage: notificationTypes.UPDATED },
+    });
 
     try {
       if (organizationEmployed.id !== "" || organizationFounded.id !== "") {
@@ -634,7 +651,10 @@ const UserController: UserController = {
       if (updatedUser) {
         const notification = {
           title: "UPDATED: Your account has been updated!",
-          message: `<p>Hi ${user?.firstName},<br><p>Your profile has been updated successfully! It's important to keep your information up to date to help us help you!</p><p>Here's what you can do now:</p><ul><li>Participate in conversations,</li><li>Monitor and update your profile,</li></ul><p>Again, thank you for updating your profile, if you have any question, don't hesitate to contact the admin!</p><div><a href='/dashboard/chat'>Join Conversation</a><a href='/dashboard/profile'>View Profile</a></div><p>We hope you keep having a great time.</p><p>Best Regards,<br>The Admin</p>`,
+          message: notificationToSend!.message.replace(
+            /\[name\]/g,
+            updatedUser.firstName
+          ),
           receiverId: updatedUser?.id,
           opened: false,
           createdAt: new Date(),
@@ -647,15 +667,10 @@ const UserController: UserController = {
         const email = await sendEmail({
           subject: notification.title,
           name: updatedUser.firstName,
-          message: `<div><p style="font-size: 16px; line-height: 1.5; color: #333;">
-  Your account information has been successfully updated on the Alumni Management System (AMS).
-</p>
-<p style="font-size: 16px; line-height: 1.5;">
-  If you did not make these changes or believe there has been an error, please contact our support team immediately.
-</p>
-<p style="font-size: 14px; color: #777;">
-  Thank you for keeping your profile up to date.
-</p></div>`,
+          message: notificationToSend!.message.replace(
+            /\[name\]/g,
+            updatedUser.firstName
+          ),
           receiver: updatedUser.email,
         });
 
@@ -802,7 +817,7 @@ export const importUsers = async (req: Request, res: Response) => {
             ],
           organizationEmployed: organizationEmployed?.name,
           positionInEmployed: row["Position in the organization employing you"],
-          roleId: "12",
+         // roleId: "12",
           createdAt: new Date(),
         };
 
@@ -839,7 +854,7 @@ export const importUsers = async (req: Request, res: Response) => {
             }),
             prisma.state.findFirst({
               where: {
-                country: { name: user?.residentCountry },
+                countryCode: user?.residentCountry?.id,
                 name: user?.state,
               },
             }),
@@ -937,11 +952,12 @@ export const importUsers = async (req: Request, res: Response) => {
                 id: state?.id ? state?.id : "unspecified",
               },
             },
-            role: {
-              connect: {
-                id: user?.roleId ? user?.roleId : "12",
-              },
-            },
+           //
+           //  role: {
+              // connect: {
+            //     id: user?.roleId ? user?.roleId : "12",
+            //   },
+            // },
             positionInEmployed: user.positionInEmployed,
             refreshToken: refreshToken,
             facebook: user?.facebook,
